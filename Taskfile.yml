@@ -1,0 +1,20 @@
+version: "3"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  check:
+    desc: Compile the sources, validate the manifest and smoke-test the cass parsing
+    cmds:
+      - python3 -m compileall -q herdr_cass bin
+      - python3 scripts/version.py check
+      - python3 bin/herdr-cass --help > /dev/null
+      - python3 -m unittest discover -s tests -q
+
+  link:
+    desc: Link this checkout into herdr (edits take effect immediately)
+    cmds:
+      - herdr plugin link "{{.ROOT_DIR}}"
