@@ -1,5 +1,9 @@
 version: "3"
 
+vars:
+  VERSION:
+    sh: python3 scripts/version.py get
+
 tasks:
   default:
     cmds:
@@ -18,3 +22,42 @@ tasks:
     desc: Link this checkout into herdr (edits take effect immediately)
     cmds:
       - herdr plugin link "{{.ROOT_DIR}}"
+
+  version:
+    desc: Print the current version
+    cmds:
+      - echo {{.VERSION}}
+    silent: true
+
+  release:
+    desc: "Bump, tag, push and publish a GitHub release: task release -- patch|minor|major|X.Y.Z"
+    preconditions:
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "Say what to release: task release -- patch|minor|major|X.Y.Z"
+      - sh: test -z "$(git status --porcelain)"
+        msg: Working tree is not clean; commit or stash first.
+      - sh: test "$(git branch --show-current)" = main
+        msg: Releases are cut from main.
+      - sh: git fetch -q origin && test "$(git rev-parse HEAD)" = "$(git rev-parse '@{u}')"
+        msg: main is not in sync with origin/main; pull or push first.
+      - sh: gh auth status > /dev/null 2>&1
+        msg: gh is not authenticated; run `gh auth login`.
+    cmds:
+      - task: check
+      - |
+        set -e
+        new=$(python3 scripts/version.py bump {{.CLI_ARGS}})
+        if git rev-parse -q --verify "refs/tags/v$new" > /dev/null; then
+          git checkout -- herdr-plugin.toml
+          echo "v$new is already tagged" >&2
+          exit 1
+        fi
+        # Bumping to the version already in the manifest (e.g. the first
+        # release) just tags the current commit.
+        if ! git diff --quiet herdr-plugin.toml; then
+          git commit -q -m "Release v$new" herdr-plugin.toml
+        fi
+        git tag -a "v$new" -m "v$new"
+        git push -q --follow-tags origin main
+        gh release create "v$new" --verify-tag --generate-notes --title "v$new"
+        echo "released v$new"
